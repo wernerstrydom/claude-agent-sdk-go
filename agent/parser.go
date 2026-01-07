@@ -20,18 +20,22 @@ type rawMessage struct {
 	Type    string          `json:"type"`
 	Subtype string          `json:"subtype,omitempty"`
 	Content json.RawMessage `json:"content,omitempty"`
+	Message json.RawMessage `json:"message,omitempty"` // For assistant messages
 
 	// System init fields
-	SessionID      string      `json:"session_id,omitempty"`
-	TranscriptPath string      `json:"transcript_path,omitempty"`
-	Tools          []ToolInfo  `json:"tools,omitempty"`
-	MCPServers     []MCPStatus `json:"mcp_servers,omitempty"`
+	SessionID      string   `json:"session_id,omitempty"`
+	TranscriptPath string   `json:"transcript_path,omitempty"`
+	Tools          []string `json:"tools,omitempty"` // Tools is []string, not []ToolInfo
+	MCPServers     []struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	} `json:"mcp_servers,omitempty"`
 
 	// Result fields
 	DurationMS    float64 `json:"duration_ms,omitempty"`
 	DurationAPIMS float64 `json:"duration_api_ms,omitempty"`
 	NumTurns      int     `json:"num_turns,omitempty"`
-	CostUSD       float64 `json:"cost_usd,omitempty"`
+	TotalCostUSD  float64 `json:"total_cost_usd,omitempty"` // total_cost_usd, not cost_usd
 	IsError       bool    `json:"is_error,omitempty"`
 	Result        string  `json:"result,omitempty"`
 	Usage         *Usage  `json:"usage,omitempty"`
@@ -131,11 +135,24 @@ func (p *parser) parseSystemMessage(raw *rawMessage, meta MessageMeta) (Message,
 			p.sessionID = raw.SessionID
 			meta.SessionID = raw.SessionID
 		}
+
+		// Convert tool strings to ToolInfo
+		tools := make([]ToolInfo, len(raw.Tools))
+		for i, name := range raw.Tools {
+			tools[i] = ToolInfo{Name: name}
+		}
+
+		// Convert MCP servers
+		mcpServers := make([]MCPStatus, len(raw.MCPServers))
+		for i, srv := range raw.MCPServers {
+			mcpServers[i] = MCPStatus{Name: srv.Name, Status: srv.Status}
+		}
+
 		return &SystemInit{
 			MessageMeta:    meta,
 			TranscriptPath: raw.TranscriptPath,
-			Tools:          raw.Tools,
-			MCPServers:     raw.MCPServers,
+			Tools:          tools,
+			MCPServers:     mcpServers,
 		}, nil
 	}
 
@@ -146,36 +163,44 @@ func (p *parser) parseSystemMessage(raw *rawMessage, meta MessageMeta) (Message,
 	}, nil
 }
 
+// messageContent holds the parsed message structure.
+type messageContent struct {
+	Role    string         `json:"role"`
+	Content []contentBlock `json:"content"`
+}
+
 // parseAssistantMessage handles assistant-type messages with content blocks.
 func (p *parser) parseAssistantMessage(raw *rawMessage, meta MessageMeta) (Message, error) {
-	// Parse content blocks
-	var blocks []contentBlock
-	if err := json.Unmarshal(raw.Content, &blocks); err != nil {
-		// If content is not an array, treat it as text
-		var text string
-		if err := json.Unmarshal(raw.Content, &text); err != nil {
-			// Return raw content as text
+	// Parse the message wrapper
+	var msgContent messageContent
+	if len(raw.Message) > 0 {
+		if err := json.Unmarshal(raw.Message, &msgContent); err != nil {
+			// Fall back to raw content
+			return &Text{
+				MessageMeta: meta,
+				Text:        string(raw.Message),
+			}, nil
+		}
+	} else if len(raw.Content) > 0 {
+		// Legacy format with content at root
+		if err := json.Unmarshal(raw.Content, &msgContent.Content); err != nil {
 			return &Text{
 				MessageMeta: meta,
 				Text:        string(raw.Content),
 			}, nil
 		}
-		return &Text{
-			MessageMeta: meta,
-			Text:        text,
-		}, nil
 	}
 
 	// Process first content block
 	// In a full implementation, you might return multiple messages or aggregate
-	if len(blocks) == 0 {
+	if len(msgContent.Content) == 0 {
 		return &Text{
 			MessageMeta: meta,
 			Text:        "",
 		}, nil
 	}
 
-	block := blocks[0]
+	block := msgContent.Content[0]
 
 	switch block.Type {
 	case "text":
@@ -218,7 +243,7 @@ func (p *parser) parseResultMessage(raw *rawMessage, meta MessageMeta) (Message,
 		DurationTotal: time.Duration(raw.DurationMS * float64(time.Millisecond)),
 		DurationAPI:   time.Duration(raw.DurationAPIMS * float64(time.Millisecond)),
 		NumTurns:      raw.NumTurns,
-		CostUSD:       raw.CostUSD,
+		CostUSD:       raw.TotalCostUSD, // Use TotalCostUSD
 		Usage:         usage,
 		ResultText:    raw.Result,
 		IsError:       raw.IsError,

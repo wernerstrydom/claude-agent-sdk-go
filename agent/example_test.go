@@ -10,14 +10,14 @@ import (
 )
 
 // ExampleNew demonstrates creating a new agent.
+// Note: With stream-json input mode, session ID is captured lazily after first message.
 func ExampleNew() {
-	// Create a fake CLI for testing
+	// Create a fake CLI for testing (stream-json mode)
 	tmpDir, _ := os.MkdirTemp("", "claude-test")
 	defer os.RemoveAll(tmpDir)
 
 	fakeClaude := filepath.Join(tmpDir, "claude")
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"example-session"}'
 sleep 10
 `
 	os.WriteFile(fakeClaude, []byte(script), 0755)
@@ -31,24 +31,22 @@ sleep 10
 	defer a.Close()
 
 	fmt.Println("Agent created successfully")
-	fmt.Println("Session:", a.SessionID())
 	// Output:
 	// Agent created successfully
-	// Session: example-session
 }
 
 // ExampleAgent_Run demonstrates running a prompt.
 func ExampleAgent_Run() {
-	// Create a fake CLI for testing
+	// Create a fake CLI for testing (stream-json mode)
 	tmpDir, _ := os.MkdirTemp("", "claude-test")
 	defer os.RemoveAll(tmpDir)
 
 	fakeClaude := filepath.Join(tmpDir, "claude")
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"run-example"}'
 read line
-echo '{"type":"assistant","content":[{"type":"text","text":"4"}]}'
-echo '{"type":"result","result":"4","num_turns":1,"cost_usd":0.001}'
+echo '{"type":"system","subtype":"init","session_id":"run-example"}'
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"4"}]}}'
+echo '{"type":"result","result":"4","num_turns":1,"total_cost_usd":0.001}'
 `
 	os.WriteFile(fakeClaude, []byte(script), 0755)
 
@@ -69,22 +67,28 @@ echo '{"type":"result","result":"4","num_turns":1,"cost_usd":0.001}'
 	// Cost: $0.001
 }
 
-// ExampleAgent_SessionID demonstrates getting the session ID.
+// ExampleAgent_SessionID demonstrates getting the session ID after a message exchange.
 func ExampleAgent_SessionID() {
-	// Create a fake CLI for testing
+	// Create a fake CLI for testing (stream-json mode)
 	tmpDir, _ := os.MkdirTemp("", "claude-test")
 	defer os.RemoveAll(tmpDir)
 
 	fakeClaude := filepath.Join(tmpDir, "claude")
 	script := `#!/bin/sh
+read line
 echo '{"type":"system","subtype":"init","session_id":"sess-12345"}'
-sleep 10
+echo '{"type":"result","result":"OK","num_turns":1,"total_cost_usd":0.001}'
 `
 	os.WriteFile(fakeClaude, []byte(script), 0755)
 
 	ctx := context.Background()
 	a, _ := agent.New(ctx, agent.CLIPath(fakeClaude))
 	defer a.Close()
+
+	// Session ID is empty before first message exchange
+	// Send a message to trigger init
+	for range a.Stream(ctx, "test") {
+	}
 
 	fmt.Println("Session ID:", a.SessionID())
 	// Output:
@@ -93,17 +97,17 @@ sleep 10
 
 // ExampleAgent_Stream demonstrates streaming messages from an agent.
 func ExampleAgent_Stream() {
-	// Create a fake CLI for testing
+	// Create a fake CLI for testing (stream-json mode)
 	tmpDir, _ := os.MkdirTemp("", "claude-test")
 	defer os.RemoveAll(tmpDir)
 
 	fakeClaude := filepath.Join(tmpDir, "claude")
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"stream-example"}'
 read line
-echo '{"type":"assistant","content":[{"type":"text","text":"Go channels are typed conduits."}]}'
-echo '{"type":"assistant","content":[{"type":"text","text":" They enable communication between goroutines."}]}'
-echo '{"type":"result","result":"Done","num_turns":1,"cost_usd":0.002}'
+echo '{"type":"system","subtype":"init","session_id":"stream-example"}'
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Go channels are typed conduits."}]}}'
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":" They enable communication between goroutines."}]}}'
+echo '{"type":"result","result":"Done","num_turns":1,"total_cost_usd":0.002}'
 `
 	os.WriteFile(fakeClaude, []byte(script), 0755)
 
@@ -126,15 +130,15 @@ echo '{"type":"result","result":"Done","num_turns":1,"cost_usd":0.002}'
 
 // ExampleAgent_Err demonstrates checking for errors after streaming.
 func ExampleAgent_Err() {
-	// Create a fake CLI for testing
+	// Create a fake CLI for testing (stream-json mode)
 	tmpDir, _ := os.MkdirTemp("", "claude-test")
 	defer os.RemoveAll(tmpDir)
 
 	fakeClaude := filepath.Join(tmpDir, "claude")
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"err-example"}'
 read line
-echo '{"type":"result","result":"OK","num_turns":1,"cost_usd":0.001}'
+echo '{"type":"system","subtype":"init","session_id":"err-example"}'
+echo '{"type":"result","result":"OK","num_turns":1,"total_cost_usd":0.001}'
 `
 	os.WriteFile(fakeClaude, []byte(script), 0755)
 

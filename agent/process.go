@@ -60,8 +60,12 @@ func startProcess(ctx context.Context, cfg *config) (*process, error) {
 
 	// Build command arguments
 	args := []string{
-		"--output-format", "json",
-		"--model", cfg.model,
+		"--print", "-",
+		"--output-format", "stream-json",
+		"--input-format", "stream-json",
+	}
+	if cfg.model != "" {
+		args = append(args, "--model", cfg.model)
 	}
 
 	cmd := exec.CommandContext(ctx, cliPath, args...)

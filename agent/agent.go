@@ -23,13 +23,28 @@ type RunOption func(*runConfig)
 // runConfig holds per-run configuration.
 type runConfig struct{}
 
-// userMessage is the JSON structure for sending prompts.
+// userMessage is the JSON structure for sending prompts to Claude CLI.
 type userMessage struct {
-	Type    string `json:"type"`
-	Content string `json:"content"`
+	Type    string      `json:"type"`
+	Message userContent `json:"message"`
+}
+
+// userContent represents the message content structure.
+type userContent struct {
+	Role    string            `json:"role"`
+	Content []userContentItem `json:"content"`
+}
+
+// userContentItem represents a content block in the message.
+type userContentItem struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 // New creates a new Agent with the given options.
+// Note: With stream-json input format, the CLI waits for the first message
+// before outputting anything (including init). The session ID is captured
+// lazily when the first message is sent.
 func New(ctx context.Context, opts ...Option) (*Agent, error) {
 	cfg := newConfig(opts...)
 
@@ -43,32 +58,11 @@ func New(ctx context.Context, opts ...Option) (*Agent, error) {
 	// Create hook chain from config
 	chain := newHookChain(cfg.preToolUseHooks)
 
-	// Wait for SystemInit message to get session ID
-	var sessionID string
-	select {
-	case msg, ok := <-bridge.recv():
-		if !ok {
-			proc.close()
-			if err := bridge.error(); err != nil {
-				return nil, &StartError{Reason: "failed to read init message", Cause: err}
-			}
-			return nil, &StartError{Reason: "process closed before init"}
-		}
-		if init, ok := msg.(*SystemInit); ok {
-			sessionID = init.SessionID
-		}
-	case <-ctx.Done():
-		bridge.close()
-		proc.close()
-		return nil, &StartError{Reason: "context cancelled waiting for init", Cause: ctx.Err()}
-	}
-
 	return &Agent{
 		cfg:       cfg,
 		proc:      proc,
 		bridge:    bridge,
 		hookChain: chain,
-		sessionID: sessionID,
 	}, nil
 }
 
@@ -88,8 +82,13 @@ func (a *Agent) Stream(ctx context.Context, prompt string, opts ...RunOption) <-
 
 	// Send prompt as JSON
 	msg := userMessage{
-		Type:    "user",
-		Content: prompt,
+		Type: "user",
+		Message: userContent{
+			Role: "user",
+			Content: []userContentItem{
+				{Type: "text", Text: prompt},
+			},
+		},
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -115,6 +114,17 @@ func (a *Agent) Stream(ctx context.Context, prompt string, opts ...RunOption) <-
 			case msg, ok := <-a.bridge.recv():
 				if !ok {
 					return
+				}
+
+				// Capture session ID from SystemInit (sent after first message with stream-json)
+				if init, isInit := msg.(*SystemInit); isInit {
+					a.mu.Lock()
+					if a.sessionID == "" {
+						a.sessionID = init.SessionID
+					}
+					a.mu.Unlock()
+					// Don't send SystemInit to caller
+					continue
 				}
 
 				// Handle control requests internally

@@ -6,17 +6,20 @@ import (
 	"testing"
 )
 
-// Test fixtures representing Claude Code CLI output
+// Test fixtures representing Claude Code CLI output (stream-json format)
 const (
-	systemInitJSON = `{"type":"system","subtype":"init","session_id":"sess-abc123","transcript_path":"/tmp/transcript.jsonl","tools":[{"Name":"Bash","Description":"Execute commands"}],"mcp_servers":[{"Name":"github","Status":"connected"}]}`
+	// Tools is a string array, mcp_servers uses lowercase keys
+	systemInitJSON = `{"type":"system","subtype":"init","session_id":"sess-abc123","transcript_path":"/tmp/transcript.jsonl","tools":["Bash"],"mcp_servers":[{"name":"github","status":"connected"}]}`
 
-	textMessageJSON = `{"type":"assistant","content":[{"type":"text","text":"Hello, I'm Claude!"}]}`
+	// Assistant messages have content in message.content (stream-json format)
+	textMessageJSON = `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello, I'm Claude!"}]}}`
 
-	thinkingMessageJSON = `{"type":"assistant","content":[{"type":"thinking","thinking":"Let me analyze this...","signature":"sig123"}]}`
+	thinkingMessageJSON = `{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Let me analyze this...","signature":"sig123"}]}}`
 
-	toolUseMessageJSON = `{"type":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"Bash","input":{"command":"ls -la"}}]}`
+	toolUseMessageJSON = `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"Bash","input":{"command":"ls -la"}}]}}`
 
-	resultMessageJSON = `{"type":"result","duration_ms":1500.5,"duration_api_ms":1200.3,"num_turns":3,"cost_usd":0.0042,"is_error":false,"result":"Task completed successfully","usage":{"InputTokens":100,"OutputTokens":50,"CacheRead":10,"CacheWrite":5}}`
+	// Result uses total_cost_usd not cost_usd
+	resultMessageJSON = `{"type":"result","duration_ms":1500.5,"duration_api_ms":1200.3,"num_turns":3,"total_cost_usd":0.0042,"is_error":false,"result":"Task completed successfully","usage":{"InputTokens":100,"OutputTokens":50,"CacheRead":10,"CacheWrite":5}}`
 
 	resultErrorMessageJSON = `{"type":"result","is_error":true,"result":"An error occurred"}`
 )

@@ -17,12 +17,11 @@ func TestNewWithInvalidCLIPath(t *testing.T) {
 }
 
 func TestCloseIsIdempotent(t *testing.T) {
-	// Create a fake CLI that outputs init and waits
+	// Create a fake CLI that waits for input (stream-json mode)
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"test-123"}'
 sleep 10
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
@@ -48,13 +47,16 @@ sleep 10
 }
 
 func TestSessionID(t *testing.T) {
-	// Create a fake CLI that outputs init
+	// Create a fake CLI that outputs init after receiving first message (stream-json mode)
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
+	// In stream-json mode, init is sent after receiving first message
 	script := `#!/bin/sh
+read line
 echo '{"type":"system","subtype":"init","session_id":"sess-abc-123"}'
-sleep 10
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello"}]}}'
+echo '{"type":"result","result":"Done","num_turns":1,"total_cost_usd":0.001}'
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
 		t.Fatalf("failed to create fake claude: %v", err)
@@ -67,21 +69,31 @@ sleep 10
 	}
 	defer a.Close()
 
+	// Session ID is empty before first message
+	if a.SessionID() != "" {
+		t.Errorf("SessionID() before message = %q, want empty", a.SessionID())
+	}
+
+	// Send a message to trigger init
+	for range a.Stream(ctx, "test") {
+	}
+
+	// Session ID should be populated after first message exchange
 	if a.SessionID() != "sess-abc-123" {
-		t.Errorf("SessionID() = %q, want %q", a.SessionID(), "sess-abc-123")
+		t.Errorf("SessionID() after message = %q, want %q", a.SessionID(), "sess-abc-123")
 	}
 }
 
 func TestRunReturnsResult(t *testing.T) {
-	// Create a fake CLI that reads input and returns a result
+	// Create a fake CLI that reads input and returns a result (stream-json mode)
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"test-run"}'
 read line
-echo '{"type":"assistant","content":[{"type":"text","text":"Hello!"}]}'
-echo '{"type":"result","result":"Task done","num_turns":1,"cost_usd":0.001}'
+echo '{"type":"system","subtype":"init","session_id":"test-run"}'
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello!"}]}}'
+echo '{"type":"result","result":"Task done","num_turns":1,"total_cost_usd":0.001}'
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
 		t.Fatalf("failed to create fake claude: %v", err)
@@ -113,12 +125,11 @@ echo '{"type":"result","result":"Task done","num_turns":1,"cost_usd":0.001}'
 }
 
 func TestRunAfterClose(t *testing.T) {
-	// Create a fake CLI
+	// Create a fake CLI (stream-json mode)
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"test-closed"}'
 sleep 10
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
@@ -140,13 +151,13 @@ sleep 10
 }
 
 func TestContextCancellation(t *testing.T) {
-	// Create a fake CLI that waits forever
+	// Create a fake CLI that waits forever (stream-json mode)
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"test-cancel"}'
 read line
+echo '{"type":"system","subtype":"init","session_id":"test-cancel"}'
 sleep 60
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
@@ -170,39 +181,43 @@ sleep 60
 	}
 }
 
-func TestNewContextCancellation(t *testing.T) {
-	// Create a fake CLI that takes too long to output init
+func TestNewCreatesAgent(t *testing.T) {
+	// In stream-json mode, New() no longer waits for init.
+	// It just starts the process and returns immediately.
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
 	script := `#!/bin/sh
 sleep 60
-echo '{"type":"system","subtype":"init","session_id":"test"}'
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
 		t.Fatalf("failed to create fake claude: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
+	ctx := context.Background()
+	a, err := New(ctx, CLIPath(fakeClaude))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer a.Close()
 
-	_, err := New(ctx, CLIPath(fakeClaude))
-	if err == nil {
-		t.Error("New() should return error when context is cancelled")
+	// Agent should be created even though CLI hasn't sent init yet
+	if a == nil {
+		t.Error("New() returned nil agent")
 	}
 }
 
 func TestStreamReturnsMessages(t *testing.T) {
-	// Create a fake CLI that outputs multiple messages
+	// Create a fake CLI that outputs multiple messages (stream-json mode)
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"test-stream"}'
 read line
-echo '{"type":"assistant","content":[{"type":"text","text":"Hello!"}]}'
-echo '{"type":"assistant","content":[{"type":"text","text":" World!"}]}'
-echo '{"type":"result","result":"Done","num_turns":1,"cost_usd":0.001}'
+echo '{"type":"system","subtype":"init","session_id":"test-stream"}'
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello!"}]}}'
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":" World!"}]}}'
+echo '{"type":"result","result":"Done","num_turns":1,"total_cost_usd":0.001}'
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
 		t.Fatalf("failed to create fake claude: %v", err)
@@ -239,17 +254,17 @@ echo '{"type":"result","result":"Done","num_turns":1,"cost_usd":0.001}'
 }
 
 func TestStreamAllMessageTypes(t *testing.T) {
-	// Create a fake CLI that outputs various message types
+	// Create a fake CLI that outputs various message types (stream-json mode)
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"test-types"}'
 read line
-echo '{"type":"assistant","content":[{"type":"text","text":"Thinking..."}]}'
-echo '{"type":"assistant","content":[{"type":"thinking","thinking":"Let me analyze","signature":"sig1"}]}'
-echo '{"type":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"Bash","input":{"command":"ls"}}]}'
-echo '{"type":"result","result":"Complete","num_turns":1,"cost_usd":0.002}'
+echo '{"type":"system","subtype":"init","session_id":"test-types"}'
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Thinking..."}]}}'
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Let me analyze","signature":"sig1"}]}}'
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"Bash","input":{"command":"ls"}}]}}'
+echo '{"type":"result","result":"Complete","num_turns":1,"total_cost_usd":0.002}'
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
 		t.Fatalf("failed to create fake claude: %v", err)
@@ -297,14 +312,14 @@ echo '{"type":"result","result":"Complete","num_turns":1,"cost_usd":0.002}'
 }
 
 func TestErrReturnsNilOnSuccess(t *testing.T) {
-	// Create a fake CLI that completes successfully
+	// Create a fake CLI that completes successfully (stream-json mode)
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"test-err-nil"}'
 read line
-echo '{"type":"result","result":"OK","num_turns":1,"cost_usd":0.001}'
+echo '{"type":"system","subtype":"init","session_id":"test-err-nil"}'
+echo '{"type":"result","result":"OK","num_turns":1,"total_cost_usd":0.001}'
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
 		t.Fatalf("failed to create fake claude: %v", err)
@@ -327,13 +342,13 @@ echo '{"type":"result","result":"OK","num_turns":1,"cost_usd":0.001}'
 }
 
 func TestStreamContextCancellation(t *testing.T) {
-	// Create a fake CLI that waits forever
+	// Create a fake CLI that waits forever (stream-json mode)
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"test-stream-cancel"}'
 read line
+echo '{"type":"system","subtype":"init","session_id":"test-stream-cancel"}'
 sleep 60
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
@@ -364,12 +379,11 @@ sleep 60
 }
 
 func TestStreamAfterClose(t *testing.T) {
-	// Create a fake CLI
+	// Create a fake CLI (stream-json mode)
 	tmpDir := t.TempDir()
 	fakeClaude := filepath.Join(tmpDir, "claude")
 
 	script := `#!/bin/sh
-echo '{"type":"system","subtype":"init","session_id":"test-stream-closed"}'
 sleep 10
 `
 	if err := os.WriteFile(fakeClaude, []byte(script), 0755); err != nil {
