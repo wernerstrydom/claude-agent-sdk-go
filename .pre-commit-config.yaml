@@ -1,0 +1,52 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: go fmt
+        entry: make fmt
+        language: system
+        pass_filenames: false
+        types: [go]
+
+      - id: go-vet
+        name: go vet
+        entry: make vet
+        language: system
+        pass_filenames: false
+        types: [go]
+
+      - id: go-lint
+        name: golangci-lint
+        entry: make lint
+        language: system
+        pass_filenames: false
+        types: [go]
+
+      - id: go-security
+        name: gosec
+        entry: make security
+        language: system
+        pass_filenames: false
+        types: [go]
+
+      - id: go-mod-tidy
+        name: go mod tidy
+        entry: make tidy
+        language: system
+        pass_filenames: false
+        files: '(\.go$|go\.mod$|go\.sum$)'
+
+      - id: go-imports
+        name: goimports
+        entry: make imports
+        language: system
+        pass_filenames: false
+        types: [go]
