@@ -35,6 +35,11 @@ type rawMessage struct {
 	IsError       bool    `json:"is_error,omitempty"`
 	Result        string  `json:"result,omitempty"`
 	Usage         *Usage  `json:"usage,omitempty"`
+
+	// Permission/Control request fields
+	RequestID string         `json:"request_id,omitempty"`
+	ToolName  string         `json:"tool_name,omitempty"`
+	ToolInput map[string]any `json:"tool_input,omitempty"`
 }
 
 // contentBlock represents a content block in an assistant message.
@@ -95,6 +100,8 @@ func (p *parser) parseMessage(raw *rawMessage) (Message, error) {
 		return p.parseAssistantMessage(raw, meta)
 	case "result":
 		return p.parseResultMessage(raw, meta)
+	case "permission", "control":
+		return p.parseControlRequest(raw, meta)
 	default:
 		// Unknown message type - return as Text with the raw type info
 		p.sequence++
@@ -103,6 +110,17 @@ func (p *parser) parseMessage(raw *rawMessage) (Message, error) {
 			Text:        string(raw.Content),
 		}, nil
 	}
+}
+
+// parseControlRequest handles permission/control request messages.
+func (p *parser) parseControlRequest(raw *rawMessage, meta MessageMeta) (Message, error) {
+	return &ControlRequestMsg{
+		MessageMeta: meta,
+		RequestID:   raw.RequestID,
+		Type:        raw.Subtype,
+		ToolName:    raw.ToolName,
+		ToolInput:   raw.ToolInput,
+	}, nil
 }
 
 // parseSystemMessage handles system-type messages.

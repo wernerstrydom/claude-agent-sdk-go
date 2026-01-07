@@ -2,9 +2,10 @@ package agent
 
 // config holds agent configuration.
 type config struct {
-	model   string
-	workDir string
-	cliPath string
+	model           string
+	workDir         string
+	cliPath         string
+	preToolUseHooks []PreToolUseHook
 }
 
 // Option configures an Agent.
@@ -28,6 +29,14 @@ func WorkDir(path string) Option {
 func CLIPath(path string) Option {
 	return func(c *config) {
 		c.cliPath = path
+	}
+}
+
+// PreToolUse adds hooks that are called before tool execution.
+// Hooks are evaluated in order: first Deny wins, Allow short-circuits.
+func PreToolUse(hooks ...PreToolUseHook) Option {
+	return func(c *config) {
+		c.preToolUseHooks = append(c.preToolUseHooks, hooks...)
 	}
 }
 

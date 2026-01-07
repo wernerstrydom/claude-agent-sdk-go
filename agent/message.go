@@ -107,3 +107,15 @@ type Error struct {
 }
 
 func (Error) message() {}
+
+// ControlRequestMsg represents a permission request from the CLI.
+// This is an internal message type used for hook evaluation.
+type ControlRequestMsg struct {
+	MessageMeta
+	RequestID string
+	Type      string
+	ToolName  string
+	ToolInput map[string]any
+}
+
+func (ControlRequestMsg) message() {}

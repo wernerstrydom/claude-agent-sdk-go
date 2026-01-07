@@ -11,6 +11,7 @@ type Agent struct {
 	cfg       *config
 	proc      *process
 	bridge    *bridge
+	hookChain *hookChain
 	sessionID string
 	mu        sync.Mutex
 	closed    bool
@@ -39,6 +40,9 @@ func New(ctx context.Context, opts ...Option) (*Agent, error) {
 
 	bridge := newBridge(proc.reader())
 
+	// Create hook chain from config
+	chain := newHookChain(cfg.preToolUseHooks)
+
 	// Wait for SystemInit message to get session ID
 	var sessionID string
 	select {
@@ -63,6 +67,7 @@ func New(ctx context.Context, opts ...Option) (*Agent, error) {
 		cfg:       cfg,
 		proc:      proc,
 		bridge:    bridge,
+		hookChain: chain,
 		sessionID: sessionID,
 	}, nil
 }
@@ -111,6 +116,22 @@ func (a *Agent) Stream(ctx context.Context, prompt string, opts ...RunOption) <-
 				if !ok {
 					return
 				}
+
+				// Handle control requests internally
+				if ctrlReq, isCtrl := msg.(*ControlRequestMsg); isCtrl {
+					req := &ControlRequest{
+						RequestID: ctrlReq.RequestID,
+						Type:      ctrlReq.Type,
+						Tool: &ToolCall{
+							Name:  ctrlReq.ToolName,
+							Input: ctrlReq.ToolInput,
+						},
+					}
+					// Ignore error - best effort response
+					_ = a.handleControlRequest(req)
+					continue
+				}
+
 				select {
 				case out <- msg:
 				case <-ctx.Done():
