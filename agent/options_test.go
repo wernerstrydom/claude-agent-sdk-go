@@ -30,6 +30,22 @@ func TestWorkDirOption(t *testing.T) {
 	}
 }
 
+func TestCLIPathOption(t *testing.T) {
+	c := newConfig(CLIPath("/usr/local/bin/claude"))
+
+	if c.cliPath != "/usr/local/bin/claude" {
+		t.Errorf("cliPath = %q, want %q", c.cliPath, "/usr/local/bin/claude")
+	}
+}
+
+func TestCLIPathDefaultEmpty(t *testing.T) {
+	c := newConfig()
+
+	if c.cliPath != "" {
+		t.Errorf("default cliPath = %q, want empty string", c.cliPath)
+	}
+}
+
 func TestOptionsCompose(t *testing.T) {
 	c := newConfig(
 		Model("claude-haiku-4-5"),

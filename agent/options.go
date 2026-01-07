@@ -4,6 +4,7 @@ package agent
 type config struct {
 	model   string
 	workDir string
+	cliPath string
 }
 
 // Option configures an Agent.
@@ -20,6 +21,13 @@ func Model(name string) Option {
 func WorkDir(path string) Option {
 	return func(c *config) {
 		c.workDir = path
+	}
+}
+
+// CLIPath overrides the default Claude CLI location.
+func CLIPath(path string) Option {
+	return func(c *config) {
+		c.cliPath = path
 	}
 }
 
