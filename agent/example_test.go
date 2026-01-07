@@ -90,3 +90,68 @@ sleep 10
 	// Output:
 	// Session ID: sess-12345
 }
+
+// ExampleAgent_Stream demonstrates streaming messages from an agent.
+func ExampleAgent_Stream() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+echo '{"type":"system","subtype":"init","session_id":"stream-example"}'
+read line
+echo '{"type":"assistant","content":[{"type":"text","text":"Go channels are typed conduits."}]}'
+echo '{"type":"assistant","content":[{"type":"text","text":" They enable communication between goroutines."}]}'
+echo '{"type":"result","result":"Done","num_turns":1,"cost_usd":0.002}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+	a, _ := agent.New(ctx, agent.CLIPath(fakeClaude))
+	defer a.Close()
+
+	for msg := range a.Stream(ctx, "Explain Go channels") {
+		switch m := msg.(type) {
+		case *agent.Text:
+			fmt.Print(m.Text)
+		case *agent.Result:
+			fmt.Printf("\nCost: $%.3f\n", m.CostUSD)
+		}
+	}
+	// Output:
+	// Go channels are typed conduits. They enable communication between goroutines.
+	// Cost: $0.002
+}
+
+// ExampleAgent_Err demonstrates checking for errors after streaming.
+func ExampleAgent_Err() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+echo '{"type":"system","subtype":"init","session_id":"err-example"}'
+read line
+echo '{"type":"result","result":"OK","num_turns":1,"cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+	a, _ := agent.New(ctx, agent.CLIPath(fakeClaude))
+	defer a.Close()
+
+	// Consume all messages
+	for range a.Stream(ctx, "test") {
+	}
+
+	// Check for errors
+	if err := a.Err(); err != nil {
+		fmt.Println("Error:", err)
+	} else {
+		fmt.Println("No errors")
+	}
+	// Output:
+	// No errors
+}

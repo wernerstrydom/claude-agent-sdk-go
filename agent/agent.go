@@ -67,13 +67,18 @@ func New(ctx context.Context, opts ...Option) (*Agent, error) {
 	}, nil
 }
 
-// Run sends a prompt and waits for the result.
-func (a *Agent) Run(ctx context.Context, prompt string, opts ...RunOption) (*Result, error) {
+// Stream sends a prompt and returns a channel of messages.
+// The channel closes when the result is received or an error occurs.
+// Call Err() after the channel closes to check for errors.
+func (a *Agent) Stream(ctx context.Context, prompt string, opts ...RunOption) <-chan Message {
+	out := make(chan Message, 32)
+
 	a.mu.Lock()
-	defer a.mu.Unlock()
 
 	if a.closed {
-		return nil, &TaskError{SessionID: a.sessionID, Message: "agent is closed"}
+		a.mu.Unlock()
+		close(out)
+		return out
 	}
 
 	// Send prompt as JSON
@@ -83,37 +88,71 @@ func (a *Agent) Run(ctx context.Context, prompt string, opts ...RunOption) (*Res
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return nil, &TaskError{SessionID: a.sessionID, Message: "failed to marshal prompt"}
+		a.mu.Unlock()
+		close(out)
+		return out
 	}
 	data = append(data, '\n')
 
 	if err := a.proc.write(data); err != nil {
-		return nil, &TaskError{SessionID: a.sessionID, Message: "failed to write prompt: " + err.Error()}
+		a.mu.Unlock()
+		close(out)
+		return out
 	}
 
-	// Collect messages until Result
-	for {
-		select {
-		case msg, ok := <-a.bridge.recv():
-			if !ok {
-				if err := a.bridge.error(); err != nil {
-					return nil, err
+	a.mu.Unlock()
+
+	// Forward messages until Result or context cancellation
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case msg, ok := <-a.bridge.recv():
+				if !ok {
+					return
 				}
-				return nil, &TaskError{SessionID: a.sessionID, Message: "stream closed without result"}
+				select {
+				case out <- msg:
+				case <-ctx.Done():
+					return
+				}
+				// Stop after Result
+				if _, isResult := msg.(*Result); isResult {
+					return
+				}
+			case <-ctx.Done():
+				return
 			}
+		}
+	}()
 
-			switch m := msg.(type) {
-			case *Result:
-				return m, nil
-			case *Error:
-				return nil, m.Err
-			}
-			// Continue collecting other message types
+	return out
+}
 
-		case <-ctx.Done():
-			return nil, ctx.Err()
+// Err returns any error that occurred during streaming.
+// Call this after the Stream() channel closes.
+func (a *Agent) Err() error {
+	return a.bridge.error()
+}
+
+// Run sends a prompt and waits for the result.
+func (a *Agent) Run(ctx context.Context, prompt string, opts ...RunOption) (*Result, error) {
+	var result *Result
+	for msg := range a.Stream(ctx, prompt, opts...) {
+		switch m := msg.(type) {
+		case *Result:
+			result = m
+		case *Error:
+			return nil, m.Err
 		}
 	}
+	if err := a.Err(); err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, &TaskError{SessionID: a.sessionID, Message: "no result received"}
+	}
+	return result, nil
 }
 
 // SessionID returns the session identifier.
