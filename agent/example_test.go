@@ -159,3 +159,57 @@ echo '{"type":"result","result":"OK","num_turns":1,"total_cost_usd":0.001}'
 	// Output:
 	// No errors
 }
+
+// Example_agentWithHooks demonstrates creating an agent with security hooks.
+// This is the recommended way to configure hooks for production use.
+func Example_agentWithHooks() {
+	// This example shows the complete pattern for creating a secure agent.
+	// The hooks are evaluated in order when Claude attempts to use tools.
+
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+read line
+echo '{"type":"system","subtype":"init","session_id":"hooks-example"}'
+echo '{"type":"result","result":"Listed files","num_turns":1,"total_cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+
+	// Create agent with security hooks
+	a, err := agent.New(ctx,
+		agent.CLIPath(fakeClaude),
+		agent.PreToolUse(
+			// Block privileged commands
+			agent.DenyCommands("sudo", "su", "chmod 777"),
+
+			// Enforce build system usage
+			agent.RequireCommand("make", "go build", "go test"),
+
+			// Restrict file access to project directory
+			agent.AllowPaths(".", "/tmp"),
+
+			// Redirect temp files to sandbox
+			agent.RedirectPath("/tmp", "./sandbox/tmp"),
+		),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer a.Close()
+
+	result, err := a.Run(ctx, "List files in the current directory")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Result:", result.ResultText)
+	// Output:
+	// Result: Listed files
+}

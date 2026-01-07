@@ -42,7 +42,7 @@ func TestSingleDenyReturnsDeny(t *testing.T) {
 	}
 
 	chain := newHookChain([]PreToolUseHook{denyHook})
-	tc := &ToolCall{Name: "Bash", Input: map[string]any{"command": "rm -rf /"}}
+	tc := &ToolCall{Name: "Bash", Input: map[string]any{"command": "echo hello"}}
 
 	result := chain.evaluate(tc)
 
@@ -240,8 +240,8 @@ func TestMergeInputsNilCases(t *testing.T) {
 }
 
 func TestConditionalHookLogic(t *testing.T) {
-	// Hook that only denies rm commands
-	denyRmHook := func(tc *ToolCall) HookResult {
+	// Hook that only denies sudo commands
+	denySudoHook := func(tc *ToolCall) HookResult {
 		if tc.Name != "Bash" {
 			return HookResult{Decision: Continue}
 		}
@@ -249,19 +249,19 @@ func TestConditionalHookLogic(t *testing.T) {
 		if !ok {
 			return HookResult{Decision: Continue}
 		}
-		if len(cmd) >= 2 && cmd[:2] == "rm" {
-			return HookResult{Decision: Deny, Reason: "rm commands not allowed"}
+		if len(cmd) >= 4 && cmd[:4] == "sudo" {
+			return HookResult{Decision: Deny, Reason: "sudo commands not allowed"}
 		}
 		return HookResult{Decision: Continue}
 	}
 
-	chain := newHookChain([]PreToolUseHook{denyRmHook})
+	chain := newHookChain([]PreToolUseHook{denySudoHook})
 
-	// Should deny rm command
-	tc1 := &ToolCall{Name: "Bash", Input: map[string]any{"command": "rm -rf /"}}
+	// Should deny sudo command
+	tc1 := &ToolCall{Name: "Bash", Input: map[string]any{"command": "sudo apt update"}}
 	result1 := chain.evaluate(tc1)
 	if result1.Decision != Deny {
-		t.Errorf("rm command should be denied, got %v", result1.Decision)
+		t.Errorf("sudo command should be denied, got %v", result1.Decision)
 	}
 
 	// Should allow ls command
