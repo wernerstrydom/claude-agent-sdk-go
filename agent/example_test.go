@@ -213,3 +213,124 @@ echo '{"type":"result","result":"Listed files","num_turns":1,"total_cost_usd":0.
 	// Output:
 	// Result: Listed files
 }
+
+// ExampleModel demonstrates specifying a Claude model for the agent.
+func ExampleModel() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+read line
+echo '{"type":"system","subtype":"init","session_id":"model-example"}'
+echo '{"type":"result","result":"Model configured","num_turns":1,"total_cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+
+	// Create agent with a specific model
+	a, err := agent.New(ctx,
+		agent.CLIPath(fakeClaude),
+		agent.Model("claude-sonnet-4-5"),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer a.Close()
+
+	result, err := a.Run(ctx, "Hello")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Result:", result.ResultText)
+	// Output:
+	// Result: Model configured
+}
+
+// ExampleWorkDir demonstrates setting the working directory for an agent.
+func ExampleWorkDir() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+read line
+echo '{"type":"system","subtype":"init","session_id":"workdir-example"}'
+echo '{"type":"result","result":"Working in project dir","num_turns":1,"total_cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	// Create a project directory to use as working directory
+	projectDir := filepath.Join(tmpDir, "project")
+	os.Mkdir(projectDir, 0755)
+
+	ctx := context.Background()
+
+	// Create agent with a specific working directory
+	a, err := agent.New(ctx,
+		agent.CLIPath(fakeClaude),
+		agent.WorkDir(projectDir),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer a.Close()
+
+	result, err := a.Run(ctx, "What directory are we in?")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Result:", result.ResultText)
+	// Output:
+	// Result: Working in project dir
+}
+
+// ExampleDenyPaths demonstrates blocking file operations on specific paths.
+func ExampleDenyPaths() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+read line
+echo '{"type":"system","subtype":"init","session_id":"denypaths-example"}'
+echo '{"type":"result","result":"Path restrictions active","num_turns":1,"total_cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+
+	// Create agent that blocks access to sensitive paths
+	a, err := agent.New(ctx,
+		agent.CLIPath(fakeClaude),
+		agent.PreToolUse(
+			// Block access to system directories and SSH keys
+			agent.DenyPaths("/etc", "/usr", "~/.ssh"),
+		),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer a.Close()
+
+	result, err := a.Run(ctx, "List files")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Result:", result.ResultText)
+	// Output:
+	// Result: Path restrictions active
+}
