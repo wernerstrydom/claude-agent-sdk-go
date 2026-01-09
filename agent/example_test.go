@@ -334,3 +334,254 @@ echo '{"type":"result","result":"Path restrictions active","num_turns":1,"total_
 	// Output:
 	// Result: Path restrictions active
 }
+
+// ExampleTools demonstrates specifying available tools for the agent.
+func ExampleTools() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+read line
+echo '{"type":"system","subtype":"init","session_id":"tools-example"}'
+echo '{"type":"result","result":"Tools configured","num_turns":1,"total_cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+
+	// Create agent with specific tools enabled
+	a, err := agent.New(ctx,
+		agent.CLIPath(fakeClaude),
+		agent.Tools("Bash", "Read", "Write", "Edit"),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer a.Close()
+
+	result, err := a.Run(ctx, "Hello")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Result:", result.ResultText)
+	// Output:
+	// Result: Tools configured
+}
+
+// ExampleAllowedTools demonstrates fine-grained tool permissions.
+func ExampleAllowedTools() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+read line
+echo '{"type":"system","subtype":"init","session_id":"allowedtools-example"}'
+echo '{"type":"result","result":"Allowed tools configured","num_turns":1,"total_cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+
+	// Create agent with tool permission patterns
+	// Bash(git:*) allows only git commands in Bash
+	a, err := agent.New(ctx,
+		agent.CLIPath(fakeClaude),
+		agent.AllowedTools("Bash(git:*)", "Read", "Write"),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer a.Close()
+
+	result, err := a.Run(ctx, "Hello")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Result:", result.ResultText)
+	// Output:
+	// Result: Allowed tools configured
+}
+
+// ExamplePermissionPrompt demonstrates setting permission handling mode.
+func ExamplePermissionPrompt() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+read line
+echo '{"type":"system","subtype":"init","session_id":"permission-example"}'
+echo '{"type":"result","result":"Permission mode configured","num_turns":1,"total_cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+
+	// Create agent with auto-accept for file edits
+	a, err := agent.New(ctx,
+		agent.CLIPath(fakeClaude),
+		agent.PermissionPrompt(agent.PermissionAcceptEdits),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer a.Close()
+
+	result, err := a.Run(ctx, "Hello")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Result:", result.ResultText)
+	// Output:
+	// Result: Permission mode configured
+}
+
+// ExampleEnv demonstrates setting environment variables for the agent.
+func ExampleEnv() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+read line
+echo '{"type":"system","subtype":"init","session_id":"env-example"}'
+echo '{"type":"result","result":"Environment configured","num_turns":1,"total_cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+
+	// Create agent with custom environment variables
+	a, err := agent.New(ctx,
+		agent.CLIPath(fakeClaude),
+		agent.Env("TMPDIR", "/sandbox/tmp"),
+		agent.Env("HOME", "/sandbox/home"),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer a.Close()
+
+	result, err := a.Run(ctx, "Hello")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Result:", result.ResultText)
+	// Output:
+	// Result: Environment configured
+}
+
+// ExampleAddDir demonstrates adding allowed directories for the agent.
+func ExampleAddDir() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+read line
+echo '{"type":"system","subtype":"init","session_id":"adddir-example"}'
+echo '{"type":"result","result":"Directories added","num_turns":1,"total_cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+
+	// Create agent with additional allowed directories
+	a, err := agent.New(ctx,
+		agent.CLIPath(fakeClaude),
+		agent.AddDir("/data", "/shared"),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer a.Close()
+
+	result, err := a.Run(ctx, "Hello")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Result:", result.ResultText)
+	// Output:
+	// Result: Directories added
+}
+
+// Example_agentWithExtendedOptions demonstrates a fully configured agent
+// with all the extended options available in Step 7.
+func Example_agentWithExtendedOptions() {
+	// Create a fake CLI for testing
+	tmpDir, _ := os.MkdirTemp("", "claude-test")
+	defer os.RemoveAll(tmpDir)
+
+	fakeClaude := filepath.Join(tmpDir, "claude")
+	script := `#!/bin/sh
+read line
+echo '{"type":"system","subtype":"init","session_id":"extended-example"}'
+echo '{"type":"result","result":"Fully configured agent ready","num_turns":1,"total_cost_usd":0.001}'
+`
+	os.WriteFile(fakeClaude, []byte(script), 0755)
+
+	ctx := context.Background()
+
+	// Create a fully configured agent with all extended options
+	a, err := agent.New(ctx,
+		agent.CLIPath(fakeClaude),
+		agent.Model("claude-sonnet-4-5"),
+
+		// Tool configuration
+		agent.Tools("Bash", "Read", "Write", "Edit"),
+		agent.AllowedTools("Bash(git:*)", "Bash(make:*)"),
+
+		// Permission mode
+		agent.PermissionPrompt(agent.PermissionAcceptEdits),
+
+		// Environment
+		agent.Env("TMPDIR", "/sandbox/tmp"),
+		agent.Env("GOPROXY", "direct"),
+
+		// Additional directories
+		agent.AddDir("/project/data"),
+
+		// Security hooks
+		agent.PreToolUse(
+			agent.DenyCommands("rm -rf", "sudo"),
+			agent.AllowPaths(".", "/tmp"),
+		),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer a.Close()
+
+	result, err := a.Run(ctx, "Hello")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Result:", result.ResultText)
+	// Output:
+	// Result: Fully configured agent ready
+}

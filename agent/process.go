@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -68,8 +69,44 @@ func startProcess(ctx context.Context, cfg *config) (*process, error) {
 		args = append(args, "--model", cfg.model)
 	}
 
+	// Tool configuration
+	if len(cfg.tools) > 0 {
+		args = append(args, "--tools", strings.Join(cfg.tools, ","))
+	}
+	if len(cfg.allowedTools) > 0 {
+		args = append(args, "--allowedTools", strings.Join(cfg.allowedTools, ","))
+	}
+	if len(cfg.disallowedTools) > 0 {
+		args = append(args, "--disallowedTools", strings.Join(cfg.disallowedTools, ","))
+	}
+
+	// Permission mode
+	if cfg.permissionMode != "" && cfg.permissionMode != PermissionDefault {
+		args = append(args, "--permission-mode", string(cfg.permissionMode))
+	}
+
+	// Additional directories
+	if len(cfg.addDirs) > 0 {
+		for _, dir := range cfg.addDirs {
+			args = append(args, "--add-dir", dir)
+		}
+	}
+
+	// Setting sources
+	if len(cfg.settingSources) > 0 {
+		args = append(args, "--setting-sources", strings.Join(cfg.settingSources, ","))
+	}
+
 	cmd := exec.CommandContext(ctx, cliPath, args...)
 	cmd.Dir = cfg.workDir
+
+	// Environment variables - start with current environment, then add/override
+	if len(cfg.env) > 0 {
+		cmd.Env = os.Environ()
+		for k, v := range cfg.env {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
 
 	// Create pipes
 	stdin, err := cmd.StdinPipe()
